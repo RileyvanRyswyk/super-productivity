@@ -105,7 +105,7 @@
             },
             "productionWeb": {
               "outputPath": {
-                "base": "dist",
+                "base": "../dist",
                 "browser": "browser"
               },
               "budgets": [
