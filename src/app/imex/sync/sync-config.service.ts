@@ -11,9 +11,8 @@ import {
 } from '../../op-log/sync-exports';
 import { DEFAULT_GLOBAL_CONFIG } from '../../features/config/default-global-config.const';
 import { SyncLog } from '../../core/log';
-import { DerivedKeyCacheService } from '../../op-log/encryption/derived-key-cache.service';
+import { clearSessionKeyCache } from '../../op-log/encryption/encryption';
 import { SuperSyncPrivateCfg } from '../../op-log/sync-providers/super-sync/super-sync.model';
-import { WrappedProviderService } from '../../op-log/sync-providers/wrapped-provider.service';
 import { SyncWrapperService } from './sync-wrapper.service';
 
 // Maps sync providers to their corresponding form field in SyncConfig
@@ -91,8 +90,6 @@ const PROVIDER_FIELD_DEFAULTS: Record<
 export class SyncConfigService {
   private _providerManager = inject(SyncProviderManager);
   private _globalConfigService = inject(GlobalConfigService);
-  private _derivedKeyCache = inject(DerivedKeyCacheService);
-  private _wrappedProvider = inject(WrappedProviderService);
   private _syncWrapper = inject(SyncWrapperService);
 
   private _lastSettings: SyncConfig | null = null;
@@ -257,9 +254,7 @@ export class SyncConfigService {
     await this._providerManager.setProviderConfig(activeProvider.id, newConfig);
 
     // Clear cached encryption keys to force re-derivation with new password
-    this._derivedKeyCache.clearCache();
-    // Clear cached adapters to force recreation with new encryption settings
-    this._wrappedProvider.clearCache();
+    clearSessionKeyCache();
     // Allow encryption dialogs to appear again after password change
     this._syncWrapper.clearEncryptionDialogSuppression();
   }
@@ -364,11 +359,22 @@ export class SyncConfigService {
         (nonEmptyFormValues?.encryptKey as string) || settings.encryptKey || '';
     }
 
+    // For SuperSync, isEncryptionEnabled is managed exclusively by dedicated dialogs
+    // (EnableEncryption, DisableEncryption, HandleDecryptError), NOT the form.
+    // Preserve the saved value to prevent accidental overwrites during config saves.
+    const savedIsEncryptionEnabled =
+      providerId === SyncProviderId.SuperSync
+        ? (oldConfig as { isEncryptionEnabled?: boolean })?.isEncryptionEnabled
+        : undefined;
+
     const configWithDefaults = {
       ...PROVIDER_FIELD_DEFAULTS[providerId],
       ...oldConfig,
       ...nonEmptyFormValues, // Only non-empty values overwrite saved config
       encryptKey: resolvedEncryptKey,
+      ...(savedIsEncryptionEnabled !== undefined
+        ? { isEncryptionEnabled: savedIsEncryptionEnabled }
+        : {}),
     };
 
     // Check if encryption settings changed to clear cached keys
@@ -386,9 +392,7 @@ export class SyncConfigService {
       SyncLog.normal(
         'SyncConfigService: Encryption settings changed, clearing cached keys',
       );
-      this._derivedKeyCache.clearCache();
-      // Clear cached adapters to force recreation with new encryption settings
-      this._wrappedProvider.clearCache();
+      clearSessionKeyCache();
     }
   }
 }

@@ -244,24 +244,44 @@ export class SyncHydrationService {
         };
       }
 
-      // 8. Save new state cache (snapshot) for crash safety
+      // 8. Determine the working clock to use.
+      // When a SYNC_IMPORT was created, reset to minimal (only importing client's entry)
+      // to prevent dead client IDs from accumulating. The SYNC_IMPORT operation stores
+      // the full merged clock for SyncImportFilterService to use when filtering.
+      // When no SYNC_IMPORT (file-based bootstrap), keep the full merged clock.
+      let clockForStorage: Record<string, number>;
+      if (createSyncImportOp) {
+        clockForStorage = {};
+        // Guard against undefined — consistent with mergeRemoteOpClocks() in OperationLogStoreService
+        if (newClock[clientId] !== undefined) {
+          clockForStorage[clientId] = newClock[clientId];
+        }
+        OpLog.normal('SyncHydrationService: Reset working clock to minimal after sync', {
+          fullClockSize: Object.keys(newClock).length,
+          minimalClockSize: Object.keys(clockForStorage).length,
+        });
+      } else {
+        clockForStorage = newClock;
+      }
+
+      // 9. Save new state cache (snapshot) for crash safety
       await this.opLogStore.saveStateCache({
         state: dataToLoad,
         lastAppliedOpSeq: lastSeq,
-        vectorClock: newClock,
+        vectorClock: clockForStorage,
         compactedAt: Date.now(),
       });
       OpLog.normal('SyncHydrationService: Saved state cache after sync');
 
-      // 9. Update vector clock store to match the new clock
+      // 10. Update vector clock store
       // This is critical because:
       // - The SYNC_IMPORT was appended with source='remote', so store wasn't updated
       // - If user creates new ops in this session, incrementAndStoreVectorClock reads from store
       // - Without this, new ops would have clocks missing entries from the SYNC_IMPORT
-      await this.opLogStore.setVectorClock(newClock);
+      await this.opLogStore.setVectorClock(clockForStorage);
       OpLog.normal('SyncHydrationService: Updated vector clock store after sync');
 
-      // 10. Dispatch loadAllData to update NgRx
+      // 11. Dispatch loadAllData to update NgRx
       this.store.dispatch(loadAllData({ appDataComplete: dataToLoad }));
       OpLog.normal('SyncHydrationService: Dispatched loadAllData with synced data');
     } catch (e) {

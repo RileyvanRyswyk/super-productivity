@@ -83,7 +83,7 @@ jobs:
 
       - name: 'Upload E2E results on failure'
         if: ${{ failure() }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: e2eResults
           path: .tmp/e2e-test-results/**/*.*
@@ -289,24 +289,12 @@ jobs:
           github_token: ${{ secrets.github_token }}
           release: false # Don't publish unsigned; we sign first, then publish
 
-      # Publish unsigned Windows binaries first so the release is never missing Windows assets
-      - name: Publish unsigned Windows binaries to GitHub Release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            .tmp/app-builds/*.exe
-            .tmp/app-builds/*.blockmap
-            .tmp/app-builds/latest*.yml
-          draft: true
-          prerelease: ${{ contains(github.ref, 'RC') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
-
-      # --- Code signing (best-effort: signing failure won't block the release) ---
+      # --- Code signing (SignPath failure is tolerated; post-signing verification failures will block the release) ---
 
       - name: Upload unsigned executables for SignPath
         id: upload-unsigned
         continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unsigned-windows-executables
           path: .tmp/app-builds/*.exe
@@ -338,10 +326,27 @@ jobs:
             Write-Error "No signed executables found in SignPath output directory"
             exit 1
           }
+          # Build a map of original filenames for matching
+          # SignPath may replace spaces with dots in filenames, so we normalize
+          # spaces, dots, and hyphens to find the corresponding original file
+          $originals = Get-ChildItem -Path .tmp/app-builds -Filter *.exe
           $signed | ForEach-Object {
-            Move-Item -Force $_.FullName .tmp/app-builds/
+            $signedName = $_.Name
+            $normalizedSigned = $signedName -replace '[.\-\s]', ''
+            $match = $originals | Where-Object { ($_.Name -replace '[.\-\s]', '') -eq $normalizedSigned }
+            if ($match -is [array]) {
+              Write-Error "Ambiguous match for $signedName — matched multiple originals: $($match.Name -join ', ')"
+              exit 1
+            }
+            if ($match) {
+              Write-Host "Replacing $($match.Name) with signed version (was: $signedName)"
+              Move-Item -Force $_.FullName $match.FullName
+            } else {
+              Write-Error "No matching original found for signed file: $signedName"
+              exit 1
+            }
           }
-          Write-Host "Signed executables:"
+          Write-Host "Final executables:"
           Get-ChildItem -Path .tmp/app-builds -Filter *.exe | Format-Table -AutoSize
 
       - name: Verify code signatures
@@ -413,7 +418,7 @@ jobs:
             }
           "
 
-      # Overwrite unsigned release assets with signed versions
+      # Only publish signed Windows binaries
       - name: Publish signed Windows binaries to GitHub Release
         if: steps.signpath.outcome == 'success'
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
