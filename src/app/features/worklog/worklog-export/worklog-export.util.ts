@@ -36,6 +36,9 @@ export const createRows = (
     case WorklogGrouping.WORKLOG: // don't group at all
       groups = handleWorklogGroup(data);
       break;
+    case WorklogGrouping.DATE_PROJECT:
+      groups = handleDateProjectGroup(data);
+      break;
     default:
       // group by TASK/PARENT
       groups = handleTaskGroup(data, groupBy);
@@ -207,6 +210,76 @@ const getTaskFields = (task: WorklogTask, data: WorklogExportData): TaskFields =
 
   const tasks = [task];
   return { tasks, titlesWithSub, titles, notes, projects, tags };
+};
+
+/**
+ * For each task it sets taskFields and iterates over timeSpentOnDay.
+ * For each timeSpentOnDay it sets timeFields and either creates a new taskGroup or pushes to a previous one.
+ */
+const handleDateProjectGroup = (data: WorklogExportData): ItemsByKey<RowItem> => {
+  const taskGroups: ItemsByKey<RowItem> = {};
+  for (const task of data.tasks) {
+    if (!task.timeSpentOnDay) {
+      continue;
+    }
+
+    const taskFields = getTaskFields(task, data);
+    const numDays = Object.keys(task.timeSpentOnDay).length;
+    const projectId = task.projectId;
+    let timeEstimate = 0;
+    let timeSpent = 0;
+    Object.keys(task.timeSpentOnDay).forEach((day) => {
+      if (!task.subTaskIds || task.subTaskIds.length === 0) {
+        timeSpent = task.timeSpentOnDay[day];
+        timeEstimate = task.timeEstimate / numDays;
+      }
+
+      const rowItem: RowItem = {
+        dates: [day],
+        workStart: data.workTimes.start[day],
+        workEnd: data.workTimes.end[day],
+        timeSpent,
+        timeEstimate,
+        ...taskFields,
+      };
+
+      const key = day + '_' + projectId;
+
+      if (!taskGroups[key]) {
+        taskGroups[key] = rowItem;
+      } else {
+        taskGroups[key].titles = unique([...taskGroups[key].titles, ...rowItem.titles]);
+        taskGroups[key].titlesWithSub = [
+          ...taskGroups[key].titlesWithSub,
+          ...rowItem.titlesWithSub,
+        ];
+        taskGroups[key].tasks = [...taskGroups[key].tasks, ...rowItem.tasks];
+        taskGroups[key].notes = [...taskGroups[key].notes, ...rowItem.notes];
+        taskGroups[key].projects = unique([
+          ...taskGroups[key].projects,
+          ...rowItem.projects,
+        ]); // should only be one project
+        taskGroups[key].tags = unique([...taskGroups[key].tags, ...rowItem.tags]);
+        if (taskGroups[key].workStart !== undefined) {
+          // TODO check if this works as intended
+          taskGroups[key].workStart = Math.min(
+            taskGroups[key].workStart as number,
+            rowItem.workStart as number,
+          );
+        }
+        if (taskGroups[key].workEnd !== undefined) {
+          // TODO check if this works as intended
+          taskGroups[key].workEnd = Math.min(
+            taskGroups[key].workEnd as number,
+            rowItem.workEnd as number,
+          );
+        }
+        taskGroups[key].timeEstimate += rowItem.timeEstimate;
+        taskGroups[key].timeSpent += rowItem.timeSpent;
+      }
+    });
+  }
+  return taskGroups;
 };
 
 const sortDateStrings = (dates: string[]): string[] => {

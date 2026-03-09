@@ -1777,6 +1777,7 @@
         "GROUP_BY": "Group by",
         "O": {
           "DATE": "Date",
+          "DATE_PROJECT": "Date & Project",
           "ENDED_WORKING": "Ended Working",
           "ESTIMATE_AS_CLOCK": "Estimate as clock (e.g. 5:23)",
           "ESTIMATE_AS_MILLISECONDS": "Estimate as milliseconds",

@@ -130,6 +130,7 @@ export class WorklogExportComponent implements OnInit, OnDestroy {
     { id: WorklogGrouping.TASK, title: T.F.WORKLOG.EXPORT.O.TASK_SUBTASK },
     { id: WorklogGrouping.PARENT, title: T.F.WORKLOG.EXPORT.O.PARENT_TASK },
     { id: WorklogGrouping.WORKLOG, title: T.F.WORKLOG.EXPORT.O.WORKLOG },
+    { id: WorklogGrouping.DATE_PROJECT, title: T.F.WORKLOG.EXPORT.O.DATE_PROJECT },
   ];
 
   private _subs: Subscription = new Subscription();

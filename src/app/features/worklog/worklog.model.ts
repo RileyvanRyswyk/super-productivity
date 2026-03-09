@@ -78,6 +78,7 @@ export enum WorklogGrouping {
   PARENT = 'PARENT',
   TASK = 'TASK',
   WORKLOG = 'WORKLOG',
+  DATE_PROJECT = 'DATE_PROJECT',
 }
 
 export interface WorklogExportSettingsCopy {
